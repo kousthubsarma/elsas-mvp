@@ -1,4 +1,7 @@
 // shared/types/access.ts
+import { Space } from './space';
+import { User } from './user';
+
 export interface AccessCode {
   id: string;
   user_id: string;

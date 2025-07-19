@@ -6,37 +6,37 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { 
-  FileText, 
+  History, 
   Search, 
   Filter,
   Calendar,
-  Users,
   MapPin,
   Clock,
   Download,
   Eye,
-  Loader2
+  FileText,
+  TrendingUp,
+  Activity
 } from "lucide-react";
 import { toast } from "sonner";
 
-interface AccessLog {
+interface AccessHistory {
   id: string;
   event: string;
   created_at: string;
   metadata: any;
-  user: {
-    full_name: string;
-    email: string;
-  };
   space: {
     name: string;
     address: string;
+    partner: {
+      company_name: string;
+    };
   };
 }
 
-export default function PartnerLogsPage() {
-  const [logs, setLogs] = useState<AccessLog[]>([]);
-  const [filteredLogs, setFilteredLogs] = useState<AccessLog[]>([]);
+export default function UserHistoryPage() {
+  const [history, setHistory] = useState<AccessHistory[]>([]);
+  const [filteredHistory, setFilteredHistory] = useState<AccessHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<string>("");
@@ -48,41 +48,18 @@ export default function PartnerLogsPage() {
   const supabase = createClientComponentClient();
 
   useEffect(() => {
-    fetchLogs();
+    fetchHistory();
   }, []);
 
   useEffect(() => {
-    filterLogs();
-  }, [logs, searchTerm, selectedEvent, selectedSpace, dateRange]);
+    filterHistory();
+  }, [history, searchTerm, selectedEvent, selectedSpace, dateRange]);
 
-  const fetchLogs = async () => {
+  const fetchHistory = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: partner } = await supabase
-        .from("partners")
-        .select("id")
-        .eq("user_id", user.id)
-        .single();
-
-      if (!partner) return;
-
-      // Get all spaces for this partner
-      const { data: spaces } = await supabase
-        .from("spaces")
-        .select("id")
-        .eq("partner_id", partner.id);
-
-      if (!spaces || spaces.length === 0) {
-        setLogs([]);
-        setLoading(false);
-        return;
-      }
-
-      const spaceIds = spaces.map(s => s.id);
-
-      // Get access logs for all partner spaces
       const { data, error } = await supabase
         .from("access_logs")
         .select(`
@@ -90,10 +67,13 @@ export default function PartnerLogsPage() {
           event,
           created_at,
           metadata,
-          user:profiles!inner(full_name, email),
-          space:spaces!inner(name, address)
+          space:spaces!inner(
+            name,
+            address,
+            partner:partners!inner(company_name)
+          )
         `)
-        .in("space_id", spaceIds)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -102,58 +82,64 @@ export default function PartnerLogsPage() {
       }
 
       // Transform the data to match our interface
-      const transformedData = (data || []).map(log => ({
-        ...log,
-        user: Array.isArray(log.user) ? log.user[0] : log.user,
-        space: Array.isArray(log.space) ? log.space[0] : log.space,
-      }));
+      const transformedData = (data || []).map(entry => {
+        const space = Array.isArray(entry.space) ? entry.space[0] : entry.space;
+        const partner = Array.isArray(space.partner) ? space.partner[0] : space.partner;
+        
+        return {
+          ...entry,
+          space: {
+            ...space,
+            partner,
+          },
+        };
+      });
 
-      setLogs(transformedData);
+      setHistory(transformedData);
     } catch (error) {
-      console.error("Error fetching logs:", error);
-      toast.error("Failed to load access logs");
+      console.error("Error fetching history:", error);
+      toast.error("Failed to load access history");
     } finally {
       setLoading(false);
     }
   };
 
-  const filterLogs = () => {
-    let filtered = logs;
+  const filterHistory = () => {
+    let filtered = history;
 
     // Filter by search term
     if (searchTerm) {
-      filtered = filtered.filter(log =>
-        log.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.space?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.space?.address?.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(entry =>
+        entry.space?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        entry.space?.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        entry.space?.partner?.company_name?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     // Filter by event type
     if (selectedEvent) {
-      filtered = filtered.filter(log => log.event === selectedEvent);
+      filtered = filtered.filter(entry => entry.event === selectedEvent);
     }
 
     // Filter by space
     if (selectedSpace) {
-      filtered = filtered.filter(log => log.space?.name === selectedSpace);
+      filtered = filtered.filter(entry => entry.space?.name === selectedSpace);
     }
 
     // Filter by date range
     if (dateRange.start) {
-      filtered = filtered.filter(log => 
-        new Date(log.created_at) >= new Date(dateRange.start)
+      filtered = filtered.filter(entry => 
+        new Date(entry.created_at) >= new Date(dateRange.start)
       );
     }
 
     if (dateRange.end) {
-      filtered = filtered.filter(log => 
-        new Date(log.created_at) <= new Date(dateRange.end + "T23:59:59")
+      filtered = filtered.filter(entry => 
+        new Date(entry.created_at) <= new Date(dateRange.end + "T23:59:59")
       );
     }
 
-    setFilteredLogs(filtered);
+    setFilteredHistory(filtered);
   };
 
   const getEventColor = (event: string) => {
@@ -198,17 +184,16 @@ export default function PartnerLogsPage() {
     });
   };
 
-  const exportLogs = () => {
+  const exportHistory = () => {
     const csvContent = [
-      ["Date", "Event", "User", "Email", "Space", "Address", "Metadata"],
-      ...filteredLogs.map(log => [
-        formatDate(log.created_at),
-        log.event,
-        log.user?.full_name || "Unknown",
-        log.user?.email || "Unknown",
-        log.space?.name || "Unknown",
-        log.space?.address || "Unknown",
-        JSON.stringify(log.metadata || {})
+      ["Date", "Event", "Space", "Address", "Partner", "Metadata"],
+      ...filteredHistory.map(entry => [
+        formatDate(entry.created_at),
+        entry.event,
+        entry.space?.name || "Unknown",
+        entry.space?.address || "Unknown",
+        entry.space?.partner?.company_name || "Unknown",
+        JSON.stringify(entry.metadata || {})
       ])
     ].map(row => row.join(",")).join("\n");
 
@@ -216,19 +201,32 @@ export default function PartnerLogsPage() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `access-logs-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `access-history-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    toast.success("Logs exported successfully");
+    toast.success("History exported successfully");
   };
 
   const getUniqueEvents = () => {
-    return [...new Set(logs.map(log => log.event))];
+    return [...new Set(history.map(entry => entry.event))];
   };
 
   const getUniqueSpaces = () => {
-    return [...new Set(logs.map(log => log.space?.name).filter(Boolean))];
+    return [...new Set(history.map(entry => entry.space?.name).filter(Boolean))];
   };
+
+  const getStats = () => {
+    const total = history.length;
+    const successful = history.filter(entry => 
+      entry.event === "granted" || entry.event === "unlocked"
+    ).length;
+    const denied = history.filter(entry => entry.event === "denied").length;
+    const uniqueSpaces = new Set(history.map(entry => entry.space?.name)).size;
+
+    return { total, successful, denied, uniqueSpaces };
+  };
+
+  const stats = getStats();
 
   if (loading) {
     return (
@@ -244,16 +242,67 @@ export default function PartnerLogsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Access Logs
+            Access History
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Monitor and analyze access activity across your spaces
+            View your past access events and activity
           </p>
         </div>
-        <Button onClick={exportLogs} variant="outline">
+        <Button onClick={exportHistory} variant="outline">
           <Download className="h-4 w-4 mr-2" />
           Export CSV
         </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <History className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Events</p>
+                <p className="text-2xl font-bold">{stats.total}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Successful</p>
+                <p className="text-2xl font-bold">{stats.successful}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <Activity className="h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Denied</p>
+                <p className="text-2xl font-bold">{stats.denied}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-5 w-5 text-purple-600" />
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Unique Spaces</p>
+                <p className="text-2xl font-bold">{stats.uniqueSpaces}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -264,7 +313,7 @@ export default function PartnerLogsPage() {
             <span>Filters</span>
           </CardTitle>
           <CardDescription>
-            Filter logs by various criteria
+            Filter history by various criteria
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -276,7 +325,7 @@ export default function PartnerLogsPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search logs..."
+                  placeholder="Search history..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -366,20 +415,20 @@ export default function PartnerLogsPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Access Logs
+            Access History
           </h2>
           <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
             <FileText className="h-4 w-4" />
-            <span>{filteredLogs.length} logs found</span>
+            <span>{filteredHistory.length} events found</span>
           </div>
         </div>
 
-        {filteredLogs.length === 0 ? (
+        {filteredHistory.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
-              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <History className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                No logs found
+                No history found
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
                 {searchTerm || selectedEvent || selectedSpace || dateRange.start || dateRange.end
@@ -391,50 +440,47 @@ export default function PartnerLogsPage() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {filteredLogs.map((log) => (
-              <Card key={log.id} className="hover:shadow-md transition-shadow">
+            {filteredHistory.map((entry) => (
+              <Card key={entry.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4">
                       <div className="text-2xl">
-                        {getEventIcon(log.event)}
+                        {getEventIcon(entry.event)}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
                           <span className="font-semibold">
-                            {log.event.charAt(0).toUpperCase() + log.event.slice(1)} Access
+                            {entry.event.charAt(0).toUpperCase() + entry.event.slice(1)} Access
                           </span>
                           <span
                             className={`px-2 py-1 rounded-full text-xs font-medium ${getEventColor(
-                              log.event
+                              entry.event
                             )}`}
                           >
-                            {log.event}
+                            {entry.event}
                           </span>
                         </div>
                         
                         <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
                           <div className="flex items-center space-x-2">
-                            <Users className="h-4 w-4" />
-                            <span>
-                              {log.user?.full_name || "Unknown User"} ({log.user?.email || "No email"})
-                            </span>
+                            <MapPin className="h-4 w-4" />
+                            <span>{entry.space?.name} - {entry.space?.address}</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <MapPin className="h-4 w-4" />
-                            <span>{log.space?.name} - {log.space?.address}</span>
+                            <span>Partner: {entry.space?.partner?.company_name}</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <Clock className="h-4 w-4" />
-                            <span>{formatDate(log.created_at)}</span>
+                            <span>{formatDate(entry.created_at)}</span>
                           </div>
                         </div>
 
-                        {log.metadata && Object.keys(log.metadata).length > 0 && (
+                        {entry.metadata && Object.keys(entry.metadata).length > 0 && (
                           <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <p className="text-xs text-gray-500 mb-1">Additional Details:</p>
                             <pre className="text-xs text-gray-700 dark:text-gray-300">
-                              {JSON.stringify(log.metadata, null, 2)}
+                              {JSON.stringify(entry.metadata, null, 2)}
                             </pre>
                           </div>
                         )}
@@ -449,4 +495,4 @@ export default function PartnerLogsPage() {
       </div>
     </div>
   );
-}
+} 

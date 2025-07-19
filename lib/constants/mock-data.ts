@@ -64,6 +64,7 @@ export const MOCK_ACCESS_CODES: AccessCode[] = [
     expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     status: 'active',
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     space: MOCK_SPACES[0]
   }
 ]

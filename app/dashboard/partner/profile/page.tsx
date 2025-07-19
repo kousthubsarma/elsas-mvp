@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
-  User, 
+  Building2, 
   Mail, 
   Phone, 
   MapPin, 
@@ -19,38 +19,44 @@ import {
   Shield,
   Bell,
   Settings,
-  Activity
+  Users,
+  Activity,
+  Globe
 } from "lucide-react";
 import { toast } from "sonner";
 
-interface UserProfile {
+interface PartnerProfile {
   id: string;
-  full_name: string;
+  company_name: string;
   email: string;
   phone?: string;
   address?: string;
-  avatar_url?: string;
+  website?: string;
+  logo_url?: string;
   created_at: string;
   preferences: {
     notifications: boolean;
     email_alerts: boolean;
     sms_alerts: boolean;
+    auto_approve: boolean;
   };
 }
 
-export default function UserProfilePage() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+export default function PartnerProfilePage() {
+  const [profile, setProfile] = useState<PartnerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
-    full_name: "",
+    company_name: "",
     phone: "",
     address: "",
+    website: "",
   });
   const [preferences, setPreferences] = useState({
     notifications: true,
     email_alerts: true,
     sms_alerts: false,
+    auto_approve: false,
   });
   const supabase = createClientComponentClient();
 
@@ -64,9 +70,9 @@ export default function UserProfilePage() {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from("profiles")
+        .from("partners")
         .select("*")
-        .eq("id", user.id)
+        .eq("user_id", user.id)
         .single();
 
       if (error) {
@@ -75,14 +81,16 @@ export default function UserProfilePage() {
 
       setProfile(data);
       setFormData({
-        full_name: data.full_name || "",
+        company_name: data.company_name || "",
         phone: data.phone || "",
         address: data.address || "",
+        website: data.website || "",
       });
       setPreferences(data.preferences || {
         notifications: true,
         email_alerts: true,
         sms_alerts: false,
+        auto_approve: false,
       });
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -98,14 +106,15 @@ export default function UserProfilePage() {
       if (!user) return;
 
       const { error } = await supabase
-        .from("profiles")
+        .from("partners")
         .update({
-          full_name: formData.full_name,
+          company_name: formData.company_name,
           phone: formData.phone,
           address: formData.address,
+          website: formData.website,
           preferences,
         })
-        .eq("id", user.id);
+        .eq("user_id", user.id);
 
       if (error) {
         throw error;
@@ -124,19 +133,21 @@ export default function UserProfilePage() {
     setEditing(false);
     if (profile) {
       setFormData({
-        full_name: profile.full_name || "",
+        company_name: profile.company_name || "",
         phone: profile.phone || "",
         address: profile.address || "",
+        website: profile.website || "",
       });
       setPreferences(profile.preferences || {
         notifications: true,
         email_alerts: true,
         sms_alerts: false,
+        auto_approve: false,
       });
     }
   };
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -146,10 +157,10 @@ export default function UserProfilePage() {
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = `logos/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from('logos')
         .upload(filePath, file);
 
       if (uploadError) {
@@ -157,23 +168,23 @@ export default function UserProfilePage() {
       }
 
       const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
+        .from('logos')
         .getPublicUrl(filePath);
 
       const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ avatar_url: publicUrl })
-        .eq("id", user.id);
+        .from("partners")
+        .update({ logo_url: publicUrl })
+        .eq("user_id", user.id);
 
       if (updateError) {
         throw updateError;
       }
 
       fetchProfile();
-      toast.success("Avatar updated successfully");
+      toast.success("Logo updated successfully");
     } catch (error) {
-      console.error("Error uploading avatar:", error);
-      toast.error("Failed to upload avatar");
+      console.error("Error uploading logo:", error);
+      toast.error("Failed to upload logo");
     }
   };
 
@@ -205,12 +216,12 @@ export default function UserProfilePage() {
   if (!profile) {
     return (
       <div className="text-center py-12">
-        <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
           Profile not found
         </h3>
         <p className="text-gray-600 dark:text-gray-400">
-          Unable to load your profile information
+          Unable to load your partner profile information
         </p>
       </div>
     );
@@ -222,10 +233,10 @@ export default function UserProfilePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Profile Settings
+            Partner Profile
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Manage your account information and preferences
+            Manage your company information and settings
           </p>
         </div>
         {!editing && (
@@ -237,16 +248,16 @@ export default function UserProfilePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Profile Information */}
+        {/* Company Information */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <User className="h-5 w-5" />
-                <span>Personal Information</span>
+                <Building2 className="h-5 w-5" />
+                <span>Company Information</span>
               </CardTitle>
               <CardDescription>
-                Your basic profile information
+                Your business details and contact information
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -254,12 +265,13 @@ export default function UserProfilePage() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Full Name
+                      Company Name *
                     </label>
                     <Input
-                      value={formData.full_name}
-                      onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                      placeholder="Enter your full name"
+                      value={formData.company_name}
+                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      placeholder="Enter company name"
+                      required
                     />
                   </div>
                   <div>
@@ -269,7 +281,7 @@ export default function UserProfilePage() {
                     <Input
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="Enter your phone number"
+                      placeholder="Enter phone number"
                       type="tel"
                     />
                   </div>
@@ -280,7 +292,18 @@ export default function UserProfilePage() {
                     <Input
                       value={formData.address}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      placeholder="Enter your address"
+                      placeholder="Enter company address"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Website
+                    </label>
+                    <Input
+                      value={formData.website}
+                      onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                      placeholder="https://example.com"
+                      type="url"
                     />
                   </div>
                   <div className="flex space-x-2">
@@ -297,10 +320,10 @@ export default function UserProfilePage() {
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
-                    <User className="h-5 w-5 text-gray-400" />
+                    <Building2 className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="text-sm text-gray-500">Full Name</p>
-                      <p className="font-medium">{profile.full_name || "Not provided"}</p>
+                      <p className="text-sm text-gray-500">Company Name</p>
+                      <p className="font-medium">{profile.company_name || "Not provided"}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -325,9 +348,16 @@ export default function UserProfilePage() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
+                    <Globe className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Website</p>
+                      <p className="font-medium">{profile.website || "Not provided"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
                     <Calendar className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="text-sm text-gray-500">Member Since</p>
+                      <p className="text-sm text-gray-500">Partner Since</p>
                       <p className="font-medium">{formatDate(profile.created_at)}</p>
                     </div>
                   </div>
@@ -341,10 +371,10 @@ export default function UserProfilePage() {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Settings className="h-5 w-5" />
-                <span>Preferences</span>
+                <span>Business Preferences</span>
               </CardTitle>
               <CardDescription>
-                Manage your notification and privacy settings
+                Manage your notification and access settings
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -353,8 +383,8 @@ export default function UserProfilePage() {
                   <div className="flex items-center space-x-3">
                     <Bell className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="font-medium">Push Notifications</p>
-                      <p className="text-sm text-gray-500">Receive notifications about access events</p>
+                      <p className="font-medium">Access Notifications</p>
+                      <p className="text-sm text-gray-500">Get notified when users access your spaces</p>
                     </div>
                   </div>
                   <input
@@ -394,27 +424,42 @@ export default function UserProfilePage() {
                     className="rounded border-gray-300"
                   />
                 </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Shield className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="font-medium">Auto-approve Access</p>
+                      <p className="text-sm text-gray-500">Automatically approve access requests</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={preferences.auto_approve}
+                    onChange={(e) => setPreferences({ ...preferences, auto_approve: e.target.checked })}
+                    className="rounded border-gray-300"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Avatar and Security */}
+        {/* Logo and Stats */}
         <div className="space-y-6">
-          {/* Avatar */}
+          {/* Logo */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Camera className="h-5 w-5" />
-                <span>Profile Picture</span>
+                <span>Company Logo</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="text-center space-y-4">
               <div className="flex justify-center">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={profile.avatar_url} alt={profile.full_name} />
+                  <AvatarImage src={profile.logo_url} alt={profile.company_name} />
                   <AvatarFallback className="text-lg">
-                    {getInitials(profile.full_name || "U")}
+                    {getInitials(profile.company_name || "C")}
                   </AvatarFallback>
                 </Avatar>
               </div>
@@ -422,15 +467,15 @@ export default function UserProfilePage() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={handleAvatarUpload}
+                  onChange={handleLogoUpload}
                   className="hidden"
-                  id="avatar-upload"
+                  id="logo-upload"
                 />
-                <label htmlFor="avatar-upload">
+                <label htmlFor="logo-upload">
                   <Button variant="outline" asChild>
                     <span>
                       <Camera className="h-4 w-4 mr-2" />
-                      Change Photo
+                      Change Logo
                     </span>
                   </Button>
                 </label>
@@ -462,23 +507,27 @@ export default function UserProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Account Stats */}
+          {/* Business Stats */}
           <Card>
             <CardHeader>
-              <CardTitle>Account Statistics</CardTitle>
+              <CardTitle>Business Statistics</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-gray-600">Total Access Codes</span>
-                <span className="font-medium">12</span>
+                <span className="text-gray-600">Total Spaces</span>
+                <span className="font-medium">8</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Active Sessions</span>
-                <span className="font-medium">3</span>
+                <span className="text-gray-600">Active Users</span>
+                <span className="font-medium">24</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Last Login</span>
-                <span className="font-medium">2 hours ago</span>
+                <span className="text-gray-600">Monthly Access</span>
+                <span className="font-medium">156</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Revenue</span>
+                <span className="font-medium">$2,450</span>
               </div>
             </CardContent>
           </Card>
@@ -486,4 +535,4 @@ export default function UserProfilePage() {
       </div>
     </div>
   );
-}
+} 
